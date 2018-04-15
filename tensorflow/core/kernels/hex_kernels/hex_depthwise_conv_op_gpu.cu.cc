@@ -18,6 +18,7 @@ limitations under the License.
 #define EIGEN_USE_GPU
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
+#include "external/cub_archive/cub/util_ptx.cuh"
 #include "tensorflow/core/framework/op_kernel.h"
 
 #include "hex_depthwise_conv_op.h"
@@ -25,7 +26,6 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/cuda_kernel_helper.h"
 #include "tensorflow/core/util/tensor_format.h"
-#include "external/cub_archive/cub/util_ptx.cuh"
 
 #if !defined(_MSC_VER)
 #define UNROLL _Pragma("unroll")
@@ -1076,12 +1076,12 @@ void LaunchHexDepthwiseConv2dGPU(const GpuDevice& d, const HexDepthwiseArgs args
 
 // A simple launch pad to launch the Cuda kernel for depthwise convolution.
 template <typename T>
-void LaunchHexDepthwiseConvOp<GPUDevice, T>::operator()(OpKernelContext* ctx,
+void LaunchHexDepthwiseConvOp<GpuDevice, T>::operator()(OpKernelContext* ctx,
                                                      const HexDepthwiseArgs args,
                                                      const T* input,
                                                      const T* filter, T* output,
                                                      TensorFormat data_format) {
-  const GPUDevice& d = ctx->eigen_device<GPUDevice>();
+  const GpuDevice& d = ctx->eigen_device<GpuDevice>();
   if (args.filter_rows == 3 && args.filter_cols == 3) {
     LaunchHexDepthwiseConv2dGPU<T, 3, 3>(d, args, input, filter, output,
                                       data_format);
@@ -1095,9 +1095,9 @@ void LaunchHexDepthwiseConvOp<GPUDevice, T>::operator()(OpKernelContext* ctx,
                   "Launch of gpu kernel for HexDepthwiseConv2DGPULaunch failed"));
 }
 
-template struct LaunchHexDepthwiseConvOp<GPUDevice, Eigen::half>;
-template struct LaunchHexDepthwiseConvOp<GPUDevice, float>;
-template struct LaunchHexDepthwiseConvOp<GPUDevice, double>;
+template struct LaunchHexDepthwiseConvOp<GpuDevice, Eigen::half>;
+template struct LaunchHexDepthwiseConvOp<GpuDevice, float>;
+template struct LaunchHexDepthwiseConvOp<GpuDevice, double>;
 
 
 template <typename T, int kKnownFilterWidth, int kKnownFilterHeight,
@@ -1223,10 +1223,10 @@ void LaunchHexDepthwiseConv2dBackpropInputGPU(const GpuDevice& d,
 
 // A simple launch pad to launch the Cuda kernel for depthwise convolution.
 template <typename T>
-void LaunchHexDepthwiseConvBackpropInputOp<GPUDevice, T>::operator()(
+void LaunchHexDepthwiseConvBackpropInputOp<GpuDevice, T>::operator()(
     OpKernelContext* ctx, const HexDepthwiseArgs& args, const T* out_backprop,
     const T* filter, T* in_backprop, TensorFormat data_format) {
-  const GPUDevice& d = ctx->eigen_device<GPUDevice>();
+  const GpuDevice& d = ctx->eigen_device<GpuDevice>();
   if (args.filter_rows == 3 && args.filter_cols == 3) {
     LaunchHexDepthwiseConv2dBackpropInputGPU<T, 3, 3>(
         d, args, out_backprop, filter, in_backprop, data_format);
@@ -1241,9 +1241,9 @@ void LaunchHexDepthwiseConvBackpropInputOp<GPUDevice, T>::operator()(
                                "utGPULaunch failed"));
 }
 
-template struct LaunchHexDepthwiseConvBackpropInputOp<GPUDevice, Eigen::half>;
-template struct LaunchHexDepthwiseConvBackpropInputOp<GPUDevice, float>;
-template struct LaunchHexDepthwiseConvBackpropInputOp<GPUDevice, double>;
+template struct LaunchHexDepthwiseConvBackpropInputOp<GpuDevice, Eigen::half>;
+template struct LaunchHexDepthwiseConvBackpropInputOp<GpuDevice, float>;
+template struct LaunchHexDepthwiseConvBackpropInputOp<GpuDevice, double>;
 
 
 
@@ -1257,7 +1257,7 @@ __device__ __forceinline__ T WarpSumReduce(T val) {
   int zeros = sub_warp * kWidth;
   unsigned mask = ((1UL << kWidth) - 1) << zeros;
   for (int delta = kWidth / 2; delta > 0; delta /= 2) {
-    val += CudaShuffleXor(mask, val, delta);
+    val += CudaShuffleXorSync(mask, val, delta);
   }
   return val;
 }
@@ -1374,7 +1374,7 @@ __launch_bounds__(1024, 2) void HexDepthwiseConv2DBackpropFilterGPUKernelNHWCSma
 
     // Note: the condition to reach this is uniform across the entire block.
     __syncthreads();
-    unsigned active_threads = CudaBallot(CUDA_WARP_ALL, depth_in_range);
+    unsigned active_threads = CudaBallotSync(kCudaWarpAll, depth_in_range);
 
     if (depth_in_range) {
       const T* const out_ptr = inout_offset + output;
@@ -1388,7 +1388,7 @@ __launch_bounds__(1024, 2) void HexDepthwiseConv2DBackpropFilterGPUKernelNHWCSma
           T val = out1 * tile_ptr[0] + out2 * tile_ptr[tile_offset];
           // Warp-accumulate pixels of the same depth and write to accumulator.
           for (int delta = 16; delta >= kBlockSlices; delta /= 2) {
-            val += CudaShuffleDown(active_threads, val, delta);
+            // val += CudaShuffleDown(active_threads, val, delta);
           }
           if (!(thread_idx & 32 - kBlockSlices) /* lane_idx < kBlockSlices */) {
             *accum_ptr = val;
@@ -1628,7 +1628,7 @@ __launch_bounds__(1024, 2) void HexDepthwiseConv2DBackpropFilterGPUKernelNCHWSma
 
     // Note: the condition to reach this is uniform across the entire block.
     __syncthreads();
-    unsigned active_threads = CudaBallot(CUDA_WARP_ALL, slice_in_range);
+    unsigned active_threads = CudaBallotSync(kCudaWarpAll, slice_in_range);
 
     if (slice_in_range) {
       const T* const out_ptr = inout_offset + output;
@@ -1642,7 +1642,7 @@ __launch_bounds__(1024, 2) void HexDepthwiseConv2DBackpropFilterGPUKernelNCHWSma
           T val = out1 * tile_ptr[0] + out2 * tile_ptr[tile_offset];
           // Warp-accumulate pixels of the same depth and write to accumulator.
           for (int delta = 16 / kBlockSlices; delta > 0; delta /= 2) {
-            val += CudaShuffleDown(active_threads, val, delta);
+            // val += CudaShuffleDown(active_threads, val, delta);
           }
           if (!(thread_idx & 32 / kBlockSlices - 1)) {
             *accum_ptr = val;
@@ -1836,10 +1836,10 @@ void LaunchHexDepthwiseConv2dBackpropFilterGPU(const GpuDevice& d,
 
 // A simple launch pad to launch the Cuda kernel for depthwise convolution.
 template <typename T>
-void LaunchHexDepthwiseConvBackpropFilterOp<GPUDevice, T>::operator()(
+void LaunchHexDepthwiseConvBackpropFilterOp<GpuDevice, T>::operator()(
     OpKernelContext* ctx, const HexDepthwiseArgs& args, const T* out_backprop,
     const T* input, T* filter_backprop, TensorFormat data_format) {
-  const GPUDevice& d = ctx->eigen_device<GPUDevice>();
+  const GpuDevice& d = ctx->eigen_device<GpuDevice>();
   auto stream = ctx->op_device_context()->stream();
 
   // Initialize the results to 0.
@@ -1862,9 +1862,9 @@ void LaunchHexDepthwiseConvBackpropFilterOp<GPUDevice, T>::operator()(
                                "terGPULaunch failed"));
 }
 
-template struct LaunchHexDepthwiseConvBackpropFilterOp<GPUDevice, Eigen::half>;
-template struct LaunchHexDepthwiseConvBackpropFilterOp<GPUDevice, float>;
-template struct LaunchHexDepthwiseConvBackpropFilterOp<GPUDevice, double>;
+template struct LaunchHexDepthwiseConvBackpropFilterOp<GpuDevice, Eigen::half>;
+template struct LaunchHexDepthwiseConvBackpropFilterOp<GpuDevice, float>;
+template struct LaunchHexDepthwiseConvBackpropFilterOp<GpuDevice, double>;
 }  // namespace tensorflow
 
 #endif  // GOOGLE_CUDA
