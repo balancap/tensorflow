@@ -1350,6 +1350,7 @@ def sampled_softmax_loss(weights,
 # Hexagonal tiling impl.
 # --------------------------------------------------------------------------
 # pylint: disable=redefined-builtin
+@tf_export("nn.hex_depthwise_conv2d")
 def hex_depthwise_conv2d(input,
                      filter,
                      strides,
@@ -1428,6 +1429,7 @@ def hex_depthwise_conv2d(input,
         name=name)
 
 # pylint: disable=redefined-builtin
+@tf_export("nn.hex_rot_depthwise_conv2d")
 def hex_rot_depthwise_conv2d(input,
                              filter,
                              rotation,
@@ -1485,6 +1487,7 @@ def hex_rot_depthwise_conv2d(input,
 # Grad dw conv2d.
 # --------------------------------------------------------------------------
 # pylint: disable=redefined-builtin
+@tf_export("nn.grad_depthwise_conv2d")
 def grad_depthwise_conv2d(input,
                      filter,
                      strides,
