@@ -1021,3 +1021,80 @@ def _NthElementGrad(op, grad):
   num_selected = array_ops.expand_dims(math_ops.reduce_sum(indicators, -1), -1)
 
   return [math_ops.div(indicators, num_selected) * grad, None]
+
+
+# --------------------------------------------------------------------------
+# Hexagonal gradients.
+# --------------------------------------------------------------------------
+@ops.RegisterGradient("HexDepthwiseConv2dNative")
+def _HexDepthwiseConv2dNativeGrad(op, grad):
+  return [
+      nn_ops.hex_depthwise_conv2d_native_backprop_input(
+          array_ops.shape(op.inputs[0]),
+          op.inputs[1],
+          grad,
+          op.get_attr("strides"),
+          op.get_attr("padding"),
+          data_format=op.get_attr("data_format")),
+      nn_ops.hex_depthwise_conv2d_native_backprop_filter(
+          op.inputs[0],
+          array_ops.shape(op.inputs[1]),
+          grad,
+          op.get_attr("strides"),
+          op.get_attr("padding"),
+          data_format=op.get_attr("data_format"))
+  ]
+
+# --------------------------------------------------------------------------
+# Hexagonal Rotation gradients.
+# --------------------------------------------------------------------------
+@ops.RegisterGradient("HexRotDepthwiseConv2dNative")
+def _HexRotDepthwiseConv2dNativeGrad(op, grad):
+  return [
+      nn_ops.hex_rot_depthwise_conv2d_native_backprop_input(
+          array_ops.shape(op.inputs[0]),
+          op.inputs[1],
+          op.inputs[2],
+          grad,
+          op.get_attr("strides"),
+          op.get_attr("padding"),
+          data_format=op.get_attr("data_format")),
+      nn_ops.hex_rot_depthwise_conv2d_native_backprop_filter(
+          op.inputs[0],
+          array_ops.shape(op.inputs[1]),
+          op.inputs[2],
+          grad,
+          op.get_attr("strides"),
+          op.get_attr("padding"),
+          data_format=op.get_attr("data_format")),
+      nn_ops.hex_rot_depthwise_conv2d_native_backprop_rotation(
+          op.inputs[0],
+          op.inputs[1],
+          op.inputs[2],
+          grad,
+          op.get_attr("strides"),
+          op.get_attr("padding"),
+          data_format=op.get_attr("data_format"))
+  ]
+
+# --------------------------------------------------------------------------
+# Grad. dw conv2d gradients.
+# --------------------------------------------------------------------------
+@ops.RegisterGradient("GradDepthwiseConv2dNative")
+def _GradDepthwiseConv2dNativeGrad(op, grad):
+  return [
+      nn_ops.grad_depthwise_conv2d_native_backprop_input(
+          array_ops.shape(op.inputs[0]),
+          op.inputs[1],
+          grad,
+          op.get_attr("strides"),
+          op.get_attr("padding"),
+          data_format=op.get_attr("data_format")),
+      nn_ops.grad_depthwise_conv2d_native_backprop_filter(
+          op.inputs[0],
+          array_ops.shape(op.inputs[1]),
+          grad,
+          op.get_attr("strides"),
+          op.get_attr("padding"),
+          data_format=op.get_attr("data_format"))
+  ]
